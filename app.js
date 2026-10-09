@@ -21,17 +21,27 @@ function renderProfile(){let initials=current.Name.split(/\s+/).slice(-2).map(x=
 function renderCalendar(){let y=calDate.getFullYear(),m=calDate.getMonth();$('#calTitle').textContent=`Tháng ${String(m+1).padStart(2,'0')}/${y}`;let first=new Date(y,m,1),offset=(first.getDay()+6)%7,start=new Date(y,m,1-offset),html='';for(let i=0;i<42;i++){let d=new Date(start);d.setDate(start.getDate()+i);let rs=data.Attendance.filter(r=>r.EmployeeId===current.Id&&isoDate(r.Date)===isoDate(d)),cls=['day'];if(d.getMonth()!==m)cls.push('other');if(d.getDay()===0)cls.push('sunday');if(isoDate(d)===isoDate(selected))cls.push('selected');let dot='';if(rs.some(r=>typeVal(r.Type)===1))dot='<i class="dot leaveDot"></i>';else if(rs.some(r=>typeVal(r.Type)===2||+r.OvertimeHours>0))dot='<i class="dot otdot"></i>';else if(rs.length)dot='<i class="dot"></i>';html+=`<button class="${cls.join(' ')}" data-date="${isoDate(d)}">${d.getDate()}${dot}</button>`}$('#calendarDays').innerHTML=html;$$('.day').forEach(b=>b.onclick=()=>{selected=new Date(b.dataset.date+'T12:00:00');calDate=new Date(selected);renderCalendar();renderDay()})}
 function renderDay(){
  const rs=data.Attendance.filter(r=>r.EmployeeId===current.Id&&isoDate(r.Date)===isoDate(selected));
- $('#selectedDate').textContent=fmt(selected);$('#detailDate').textContent=fmt(selected)+(selected.getDay()===0?' • Chủ nhật':'');
+ $('#selectedDate').textContent=fmt(selected);
+ $('#detailDate').textContent=fmt(selected)+(selected.getDay()===0?' • Chủ nhật':'');
  const area=$('#dayDetail');area.replaceChildren();
- if(!rs.length){area.textContent='Chưa có chấm công. Chọn ngày trên lịch để xem chi tiết.';return}
- for(const r of rs){
-  const wrap=document.createElement('div');wrap.className='attendance-entry';
-  const info=document.createElement('div');info.textContent=`${typeName(typeVal(r.Type))} • ${shiftVal(r.Shift)==='Day'?'Ca ngày':'Ca đêm'} • Công: ${paid(r)} • OT: ${+r.OvertimeHours||0} giờ`;
-  const actions=document.createElement('div');actions.className='emp-actions';
-  const edit=document.createElement('button');edit.className='outline';edit.textContent='Sửa';edit.onclick=()=>editAttendance(r.Id);
-  const del=document.createElement('button');del.className='outline danger';del.textContent='Xóa';del.onclick=()=>deleteAttendance(r.Id);
-  actions.append(edit,del);wrap.append(info,actions);area.append(wrap);
+ if(!rs.length){const msg=document.createElement('p');msg.textContent='Chưa có chấm công.';area.append(msg)}
+ // Chỉ hiển thị một mục chi tiết ngày như bản PC.
+ // Nếu dữ liệu cũ có nhiều bản ghi, vẫn giữ nguyên tất cả để không mất dữ liệu.
+ if(rs.length){
+  const r=rs[0];
+  const item=document.createElement('div');item.className='attendance-entry';
+  const first=document.createElement('div');first.textContent='• '+typeName(typeVal(r.Type))+'  •  '+(shiftVal(r.Shift)==='Day'?'Ca ngày':'Ca đêm');
+  const second=document.createElement('div');second.className='attendance-sub';second.textContent='Công: '+paid(r)+'    OT: '+(+r.OvertimeHours||0)+' giờ';
+  item.append(first,second);area.append(item);
  }
+ const action=document.createElement('button');action.className='outline day-edit-button';action.textContent='✎  Sửa / xóa chấm công';
+ action.onclick=()=>editSelectedDay();area.append(action);
+}
+function editSelectedDay(){
+ const rs=data.Attendance.filter(r=>r.EmployeeId===current.Id&&isoDate(r.Date)===isoDate(selected));
+ if(!rs.length){alert('Ngày này chưa có chấm công để sửa.');return}
+ // Mở thẳng biểu mẫu của dòng đang hiển thị trong Chi tiết ngày.
+ editAttendance(rs[0].Id);
 }
 function deleteAttendance(id){
  const r=data.Attendance.find(x=>x.Id===id&&x.EmployeeId===current.Id);if(!r)return;
@@ -55,6 +65,7 @@ function editAttendance(id){
   Object.assign(r,{Date:new Date(day+'T12:00:00').toISOString(),Type:nt,Shift:$('#editShift').value,PaidDayUnits:units,OvertimeHours:hours,Note:$('#editNote').value});
   selected=new Date(day+'T12:00:00');calDate=new Date(selected);month=selected.getMonth()+1;year=selected.getFullYear();saveLocal();
  });
+ const remove=document.createElement('button');remove.type='button';remove.className='outline danger';remove.textContent='Xóa chấm công';remove.onclick=()=>{if(!data.Attendance.some(x=>x.Id===id))return;const before=data.Attendance.length;deleteAttendance(id);if(data.Attendance.length<before)$('#modal').close()};$('#modalForm .modal-actions').prepend(remove);
 }
 function renderMonth(){$('#month').value=month;$('#year').value=year;$('#monthTitle').textContent=`Tổng kết tháng ${String(month).padStart(2,'0')}/${year}`;let rs=rowsFor(current).sort((a,b)=>new Date(b.Date)-new Date(a.Date));$('#attendanceRows').innerHTML=rs.map(r=>`<tr><td>${fmt(r.Date)}</td><td>${typeName(typeVal(r.Type))}</td><td>${shiftVal(r.Shift)==='Day'?'Ngày':'Đêm'}</td><td>${paid(r)}</td><td>${+r.OvertimeHours||0}</td><td>${new Date(r.Date).getDay()===0?'Chủ nhật':r.Note||''}</td></tr>`).join('')||'<tr><td colspan="6">Chưa có dữ liệu.</td></tr>';let s=salary(current,rs,month,year,$('#bonus').checked);let lines=[['Lương công',s.BasePay],['OT ngày',s.DayOtPay],['OT đêm',s.NightOtPay],['Ca đêm +30%',s.NightExtraPay],['Chủ nhật',s.SundayDayPay+s.SundayNightPay],['Chuyên cần',s.AttendanceBonus],['Bảo hiểm',-s.Insurance],['Công đoàn',-s.UnionFee]];$('#salaryLines').innerHTML=lines.map(x=>`<div class="salary-line"><span>${x[0]}</span><strong>${x[1]<0?'− ':''}${money(Math.abs(x[1]))}</strong></div>`).join('');$('#netPay').textContent=money(s.Net)}
 function renderEmployees(){
