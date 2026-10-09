@@ -19,7 +19,43 @@ function applyLeave(){let today=new Date(),day=Math.max(1,Math.min(28,+data.Sett
 function renderAll(){if(!data.Employees.find(e=>e.Id===current?.Id))current=data.Employees[0];renderProfile();renderCalendar();renderDay();renderMonth();renderEmployees();renderOT();renderLeave();renderPayroll();renderRules();updateSync()}
 function renderProfile(){let initials=current.Name.split(/\s+/).slice(-2).map(x=>x[0]).join('').toUpperCase();$('#avatar').textContent=initials;$('#empName').textContent=current.Name;$('#empMeta').textContent=`Mã NV: ${current.Code} • Phép còn: ${+current.AnnualLeaveBalance||0} ngày`;$('#empSalary').textContent=`Lương công ${money(current.SalaryBase)} • OT ${money(current.OvertimeBase)}`;$('#employeeCards').innerHTML=data.Employees.map(e=>`<button class="emp-card ${e.Id===current.Id?'active':''}" data-eid="${e.Id}"><b>${e.Code}</b><br>${e.Name}</button>`).join('');$$('[data-eid]').forEach(b=>b.onclick=()=>{current=data.Employees.find(e=>e.Id===b.dataset.eid);renderAll()})}
 function renderCalendar(){let y=calDate.getFullYear(),m=calDate.getMonth();$('#calTitle').textContent=`Tháng ${String(m+1).padStart(2,'0')}/${y}`;let first=new Date(y,m,1),offset=(first.getDay()+6)%7,start=new Date(y,m,1-offset),html='';for(let i=0;i<42;i++){let d=new Date(start);d.setDate(start.getDate()+i);let rs=data.Attendance.filter(r=>r.EmployeeId===current.Id&&isoDate(r.Date)===isoDate(d)),cls=['day'];if(d.getMonth()!==m)cls.push('other');if(d.getDay()===0)cls.push('sunday');if(isoDate(d)===isoDate(selected))cls.push('selected');let dot='';if(rs.some(r=>typeVal(r.Type)===1))dot='<i class="dot leaveDot"></i>';else if(rs.some(r=>typeVal(r.Type)===2||+r.OvertimeHours>0))dot='<i class="dot otdot"></i>';else if(rs.length)dot='<i class="dot"></i>';html+=`<button class="${cls.join(' ')}" data-date="${isoDate(d)}">${d.getDate()}${dot}</button>`}$('#calendarDays').innerHTML=html;$$('.day').forEach(b=>b.onclick=()=>{selected=new Date(b.dataset.date+'T12:00:00');calDate=new Date(selected);renderCalendar();renderDay()})}
-function renderDay(){let rs=data.Attendance.filter(r=>r.EmployeeId===current.Id&&isoDate(r.Date)===isoDate(selected));$('#selectedDate').textContent=fmt(selected);$('#detailDate').textContent=fmt(selected)+(selected.getDay()===0?' • Chủ nhật':'');$('#dayDetail').textContent=rs.length?rs.map(r=>`● ${typeName(typeVal(r.Type))} • ${shiftVal(r.Shift)==='Day'?'Ca ngày':'Ca đêm'}\n  Công: ${paid(r)}   OT: ${+r.OvertimeHours||0} giờ`).join('\n\n'):'Chưa có chấm công.\n\nChọn ngày trên lịch để xem chi tiết.'}
+function renderDay(){
+ const rs=data.Attendance.filter(r=>r.EmployeeId===current.Id&&isoDate(r.Date)===isoDate(selected));
+ $('#selectedDate').textContent=fmt(selected);$('#detailDate').textContent=fmt(selected)+(selected.getDay()===0?' • Chủ nhật':'');
+ const area=$('#dayDetail');area.replaceChildren();
+ if(!rs.length){area.textContent='Chưa có chấm công. Chọn ngày trên lịch để xem chi tiết.';return}
+ for(const r of rs){
+  const wrap=document.createElement('div');wrap.className='attendance-entry';
+  const info=document.createElement('div');info.textContent=`${typeName(typeVal(r.Type))} • ${shiftVal(r.Shift)==='Day'?'Ca ngày':'Ca đêm'} • Công: ${paid(r)} • OT: ${+r.OvertimeHours||0} giờ`;
+  const actions=document.createElement('div');actions.className='emp-actions';
+  const edit=document.createElement('button');edit.className='outline';edit.textContent='Sửa';edit.onclick=()=>editAttendance(r.Id);
+  const del=document.createElement('button');del.className='outline danger';del.textContent='Xóa';del.onclick=()=>deleteAttendance(r.Id);
+  actions.append(edit,del);wrap.append(info,actions);area.append(wrap);
+ }
+}
+function deleteAttendance(id){
+ const r=data.Attendance.find(x=>x.Id===id&&x.EmployeeId===current.Id);if(!r)return;
+ if(!confirm(`Xóa bản ghi ${typeName(typeVal(r.Type))} ngày ${fmt(r.Date)}?`))return;
+ if(typeVal(r.Type)===1)current.AnnualLeaveBalance=(+current.AnnualLeaveBalance||0)+(+r.PaidDayUnits||1);
+ data.Attendance=data.Attendance.filter(x=>x.Id!==id);saveLocal();
+}
+function editAttendance(id){
+ const r=data.Attendance.find(x=>x.Id===id&&x.EmployeeId===current.Id);if(!r)return;
+ const d=isoDate(r.Date),t=typeVal(r.Type),sh=shiftVal(r.Shift),u=+r.PaidDayUnits||1;
+ const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ showModal('Sửa chấm công',`<label>Ngày<input id="editDate" type="date" value="${d}"></label><label>Loại công<select id="editType"><option value="0" ${t===0?'selected':''}>Đi làm</option><option value="1" ${t===1?'selected':''}>Nghỉ phép</option><option value="2" ${t===2?'selected':''}>Tăng ca</option><option value="3" ${t===3?'selected':''}>Nghỉ lễ</option></select></label><label>Ca<select id="editShift"><option value="Day" ${sh==='Day'?'selected':''}>Ca ngày</option><option value="Night" ${sh==='Night'?'selected':''}>Ca đêm</option></select></label><label>Số công / ngày phép<input id="editUnits" type="number" min="0" step="0.5" value="${u}"></label><label>Tăng ca (giờ)<input id="editHours" type="number" min="0" step="0.5" value="${+r.OvertimeHours||0}"></label><label>Ghi chú<input id="editNote" value="${esc(r.Note)}"></label>`,()=>{
+  const day=$('#editDate').value,nt=+$('#editType').value,units=+$('#editUnits').value,hours=+$('#editHours').value;
+  if(!day||!Number.isFinite(units)||units<0||!Number.isFinite(hours)||hours<0)return alert('Ngày, công hoặc số giờ không hợp lệ.'),false;
+  if(nt===1&&units<=0)return alert('Số ngày phép phải lớn hơn 0.'),false;
+  const conflict=data.Attendance.some(x=>x.Id!==id&&x.EmployeeId===current.Id&&isoDate(x.Date)===day&&[0,1,3].includes(typeVal(x.Type))&&[0,1,3].includes(nt));
+  if(conflict)return alert('Ngày này đã có dòng công hoặc nghỉ khác.'),false;
+  const oldLeave=t===1?u:0,newLeave=nt===1?units:0,available=(+current.AnnualLeaveBalance||0)+oldLeave;
+  if(newLeave>available)return alert(`Không đủ phép. Hiện có ${available} ngày.`),false;
+  current.AnnualLeaveBalance=available-newLeave;
+  Object.assign(r,{Date:new Date(day+'T12:00:00').toISOString(),Type:nt,Shift:$('#editShift').value,PaidDayUnits:units,OvertimeHours:hours,Note:$('#editNote').value});
+  selected=new Date(day+'T12:00:00');calDate=new Date(selected);month=selected.getMonth()+1;year=selected.getFullYear();saveLocal();
+ });
+}
 function renderMonth(){$('#month').value=month;$('#year').value=year;$('#monthTitle').textContent=`Tổng kết tháng ${String(month).padStart(2,'0')}/${year}`;let rs=rowsFor(current).sort((a,b)=>new Date(b.Date)-new Date(a.Date));$('#attendanceRows').innerHTML=rs.map(r=>`<tr><td>${fmt(r.Date)}</td><td>${typeName(typeVal(r.Type))}</td><td>${shiftVal(r.Shift)==='Day'?'Ngày':'Đêm'}</td><td>${paid(r)}</td><td>${+r.OvertimeHours||0}</td><td>${new Date(r.Date).getDay()===0?'Chủ nhật':r.Note||''}</td></tr>`).join('')||'<tr><td colspan="6">Chưa có dữ liệu.</td></tr>';let s=salary(current,rs,month,year,$('#bonus').checked);let lines=[['Lương công',s.BasePay],['OT ngày',s.DayOtPay],['OT đêm',s.NightOtPay],['Ca đêm +30%',s.NightExtraPay],['Chủ nhật',s.SundayDayPay+s.SundayNightPay],['Chuyên cần',s.AttendanceBonus],['Bảo hiểm',-s.Insurance],['Công đoàn',-s.UnionFee]];$('#salaryLines').innerHTML=lines.map(x=>`<div class="salary-line"><span>${x[0]}</span><strong>${x[1]<0?'− ':''}${money(Math.abs(x[1]))}</strong></div>`).join('');$('#netPay').textContent=money(s.Net)}
 function renderEmployees(){
   $('#employeeTable').innerHTML=data.Employees.map(e=>`<tr><td>${e.Code}</td><td><b>${e.Name}</b></td><td>${money(e.SalaryBase)}</td><td>${money(e.OvertimeBase)}</td><td>${+e.AnnualLeaveBalance||0} ngày</td><td><div class="emp-actions"><button class="outline editEmp" data-id="${e.Id}">Sửa</button><button class="outline danger deleteEmp" data-id="${e.Id}">Xóa</button></div></td></tr>`).join('');
@@ -49,7 +85,7 @@ function employeeDialog(e,isNew){showModal(isNew?'Thêm nhân viên':'Sửa nhâ
 function autoPush(){}
 function updateSync(){$('#syncState').textContent='Đã lưu trên thiết bị • không cần Internet'}
 $$('nav button').forEach(b=>b.onclick=()=>{$$('nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');$$('.view').forEach(v=>v.classList.remove('active'));$('#'+b.dataset.view).classList.add('active');renderAll()});
-$('#prev').onclick=()=>{calDate.setMonth(calDate.getMonth()-1);renderCalendar()};$('#next').onclick=()=>{calDate.setMonth(calDate.getMonth()+1);renderCalendar()};$('#today').onclick=()=>{selected=new Date();calDate=new Date();renderCalendar();renderDay()};$$('[data-action]').forEach(b=>b.onclick=()=>addAttendance(b.dataset.action));$('#deleteBtn').onclick=()=>{let rs=data.Attendance.filter(r=>r.EmployeeId===current.Id&&isoDate(r.Date)===isoDate(selected));if(!rs.length)return alert('Ngày này chưa có dữ liệu.');let r=rs[rs.length-1];if(confirm(`Xóa ${typeName(typeVal(r.Type))} ngày ${fmt(selected)}?`)){if(typeVal(r.Type)===1)current.AnnualLeaveBalance+=(+r.PaidDayUnits||1);data.Attendance=data.Attendance.filter(x=>x.Id!==r.Id);saveLocal()}};
+$('#prev').onclick=()=>{calDate.setMonth(calDate.getMonth()-1);renderCalendar()};$('#next').onclick=()=>{calDate.setMonth(calDate.getMonth()+1);renderCalendar()};$('#today').onclick=()=>{selected=new Date();calDate=new Date();renderCalendar();renderDay()};$$('[data-action]').forEach(b=>b.onclick=()=>addAttendance(b.dataset.action));
 for(let i=1;i<=12;i++)$('#month').add(new Option(i,i));for(let y=new Date().getFullYear()-5;y<=new Date().getFullYear()+5;y++)$('#year').add(new Option(y,y));$('#month').value=month;$('#year').value=year;$('#month').onchange=()=>{month=+$('#month').value;renderAll()};$('#year').onchange=()=>{year=+$('#year').value;renderAll()};$('#bonus').onchange=renderAll;$('#addEmp').onclick=()=>{if(data.Employees.length>=5)return alert('App giới hạn tối đa 5 người.');let e=newEmp();e.Code=`NV${String(data.Employees.length+1).padStart(2,'0')}`;employeeDialog(e,true)};
 $('#rulesForm').onsubmit=e=>{e.preventDefault();new FormData(e.target).forEach((v,k)=>data.Settings[k]=+v);saveLocal();alert('Đã lưu quy tắc.')};
 $('#exportJson').onclick=()=>download('chamcong-backup.json',JSON.stringify(data,null,2),'application/json');$('#importJson').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let d=JSON.parse(await f.text());data=d;data.Settings={...defaults,...data.Settings};current=data.Employees[0];saveLocal()}catch{alert('File JSON không hợp lệ.')}};

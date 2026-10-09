@@ -40,3 +40,5 @@ html,body{max-width:100%;overflow-x:hidden}
 }
 
 .emp-actions{display:flex;gap:6px;align-items:center}.emp-actions button{padding:8px 11px;white-space:nowrap}.emp-actions .danger{border-color:#f4c4c4;color:#c62828;background:#fff7f7}
+
+.attendance-entry{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border,#ddd);white-space:normal}.attendance-entry .emp-actions{display:flex;gap:8px;flex-shrink:0}@media(max-width:600px){.attendance-entry{align-items:flex-start;flex-direction:column}.attendance-entry .emp-actions button{min-height:40px}}
